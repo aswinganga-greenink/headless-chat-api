@@ -18,8 +18,13 @@ dependencies = [
     "alembic",
     "python-multipart",
     "python-jose[cryptography]",
-    "passlib[bcrypt]",
-    "aiosqlite", # For easier local testing if needed, though Postgres is primary
+    "passlib[argon2]",
+    "aiosqlite",
+    "aiofiles",
+    "pytest",
+    "pytest-asyncio",
+    "httpx",
+    "email-validator",
 ]
 
 [tool.hatch.build.targets.wheel]

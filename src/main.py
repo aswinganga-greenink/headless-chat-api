@@ -39,6 +39,16 @@ def create_app() -> FastAPI:
             "docs": "/docs"
         }
         
+    # Include Routers
+    from src.modules.auth.router import router as auth_router
+    from src.modules.users.router import router as users_router
+    
+    app.include_router(auth_router, prefix=f"{settings.API_V1_STR}/auth", tags=["Authentication"])
+    app.include_router(users_router, prefix=f"{settings.API_V1_STR}/users", tags=["Users"])
+    
+    from src.modules.conversations.router import router as conversations_router
+    app.include_router(conversations_router, prefix=f"{settings.API_V1_STR}/conversations", tags=["Conversations"])
+    
     return app
 
 app = create_app()

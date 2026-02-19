@@ -10,7 +10,8 @@ logger = logging.getLogger(__name__)
 engine = create_async_engine(
     settings.DATABASE_URL,
     echo=settings.DEBUG,
-    future=True
+    future=True,
+    connect_args={"ssl": False}
 )
 
 # Create the session factory
