@@ -13,6 +13,7 @@ class Conversation(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     title = Column(String, nullable=True) # Used for group chats
     is_group = Column(Boolean, default=False)
+    is_archived = Column(Boolean, default=False, nullable=False)
     
     # Optional metadata or state
     # last_message_at can be added later

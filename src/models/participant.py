@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, ForeignKey
+from sqlalchemy import Column, String, ForeignKey, Boolean
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 from src.database.base_class import Base
@@ -14,6 +14,7 @@ class ConversationParticipant(Base):
     user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
     
     role = Column(String, default="member") # e.g., 'admin', 'member'
+    is_active = Column(Boolean, default=True, nullable=False) # False if user leaves
     
     # Relationships
     user = relationship("User", back_populates="participations")
