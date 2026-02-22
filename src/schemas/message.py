@@ -14,6 +14,12 @@ class MessageCreate(MessageBase):
     """
     pass
 
+class MessageRead(BaseModel):
+    """
+    Schema for updating the last seen message.
+    """
+    last_seen_message_id: UUID
+
 class MessageResponse(MessageBase):
     id: UUID
     conversation_id: UUID

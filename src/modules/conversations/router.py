@@ -90,7 +90,50 @@ async def list_conversations(
     
     result = await db.execute(stmt)
     conversations = result.scalars().all()
-    return conversations
+    
+    response_list = []
+    from src.models.all_models import Message
+    from sqlalchemy import func
+    
+    for conv in conversations:
+        # 1. Get user's participant record for last_seen_id
+        p_stmt = select(ConversationParticipant).where(
+            ConversationParticipant.conversation_id == conv.id,
+            ConversationParticipant.user_id == current_user.id
+        )
+        p_res = await db.execute(p_stmt)
+        part = p_res.scalars().first()
+        
+        unread_count = 0
+        if part:
+            if part.last_seen_message_id:
+                # Find the timestamp of the last seen message
+                m_stmt = select(Message.created_at).where(Message.id == part.last_seen_message_id)
+                m_res = await db.execute(m_stmt)
+                last_time = m_res.scalar()
+                
+                if last_time:
+                    c_stmt = select(func.count(Message.id)).where(
+                        Message.conversation_id == conv.id,
+                        Message.created_at > last_time
+                    )
+                    c_res = await db.execute(c_stmt)
+                    unread_count = c_res.scalar() or 0
+            else:
+                # Never seen any message, count all
+                c_stmt = select(func.count(Message.id)).where(Message.conversation_id == conv.id)
+                c_res = await db.execute(c_stmt)
+                unread_count = c_res.scalar() or 0
+                
+        # Build the response model
+        conv_resp = ConversationResponse.model_validate(conv)
+        # Note: model_validate creates a new immutable-by-default pydantic model in v2, 
+        # so we either use a dict or copy/update. 
+        conv_dict = conv_resp.model_dump()
+        conv_dict["unread_count"] = unread_count
+        response_list.append(ConversationResponse(**conv_dict))
+
+    return response_list
 
 @router.post("/{conversation_id}/participants", status_code=status.HTTP_200_OK)
 async def add_participants(

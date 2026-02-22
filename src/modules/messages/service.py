@@ -94,3 +94,15 @@ class MessageService:
             items=[MessageResponse.model_validate(m) for m in messages],
             next_cursor=next_cursor
         )
+
+    async def read_message(self, conversation_id: str, user_id: str, last_seen_message_id: str):
+        """
+        Updates the user's last seen message ID for a conversation.
+        """
+        participant = await self.repo.get_participant(conversation_id, user_id)
+        if not participant:
+            raise HTTPException(status_code=403, detail="You are not a participant of this conversation")
+            
+        participant.last_seen_message_id = last_seen_message_id
+        await self.db.commit()
+        return {"status": "ok"}

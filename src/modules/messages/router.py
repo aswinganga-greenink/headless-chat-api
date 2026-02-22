@@ -3,9 +3,10 @@ from fastapi import APIRouter, Depends, status, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api import deps
-from src.schemas.message import MessageCreate, MessageResponse, MessageList
+from src.schemas.message import MessageCreate, MessageResponse, MessageList, MessageRead
 from src.models.all_models import User
 from src.modules.messages.service import MessageService
+from src.api import deps
 
 router = APIRouter()
 
@@ -38,3 +39,17 @@ async def list_messages(
     """
     service = MessageService(db)
     return await service.list_messages(conversation_id, str(current_user.id), limit, cursor)
+
+@router.put("/{conversation_id}/messages/read", status_code=status.HTTP_200_OK)
+async def mark_read(
+    conversation_id: str,
+    payload: MessageRead,
+
+    current_user: User = Depends(deps.get_current_user),
+    db: AsyncSession = Depends(deps.get_db)
+):
+    """
+    Mark messages up to the provided ID as read.
+    """
+    service = MessageService(db)
+    return await service.read_message(conversation_id, str(current_user.id), str(payload.last_seen_message_id))

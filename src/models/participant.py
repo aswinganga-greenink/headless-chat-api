@@ -15,6 +15,7 @@ class ConversationParticipant(Base):
     
     role = Column(String, default="member") # e.g., 'admin', 'member'
     is_active = Column(Boolean, default=True, nullable=False) # False if user leaves
+    last_seen_message_id = Column(UUID(as_uuid=True), ForeignKey("messages.id", ondelete="SET NULL"), nullable=True)
     
     # Relationships
     user = relationship("User", back_populates="participations")

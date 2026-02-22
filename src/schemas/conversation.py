@@ -27,6 +27,7 @@ class ConversationResponse(ConversationBase):
     creator_id: Optional[UUID]
     created_at: datetime
     updated_at: Optional[datetime]
+    unread_count: int = 0
     # We might want to return participants or last message here
     
     class Config:
