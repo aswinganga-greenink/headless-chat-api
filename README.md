@@ -30,7 +30,7 @@ Clone the repository and set up a virtual environment:
 git clone <repository_url>
     cd headless-chat
     python -m venv venv
-    source venv/bin/activate # On Windows: venv\Scripts\activate
+    source venv/bin/activate # On Windows: venv\\Scripts\\activate
     ```
 
     ### 2. Install Dependencies
