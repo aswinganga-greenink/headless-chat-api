@@ -29,3 +29,8 @@ async def websocket_endpoint(
                 
     except WebSocketDisconnect:
         manager.disconnect(user_id_str, websocket)
+    except Exception as e:
+        import logging
+        logger = logging.getLogger("chat_api")
+        logger.error(f"WebSocket error for user {user_id_str}: {e}")
+        manager.disconnect(user_id_str, websocket)

@@ -27,14 +27,19 @@ class ConnectionManager:
     async def send_personal_message(self, message: Any, user_id: str):
         """
         Send a JSON message to all active connections of a specific user.
+        Cleans up any connections that fail to send (dead connections).
         """
         if user_id in self.active_connections:
-            for connection in self.active_connections[user_id]:
+            # Iterate over a copy of the list so we can remove items safely
+            connections = list(self.active_connections[user_id])
+            for connection in connections:
                 try:
                     await connection.send_json(message)
-                except Exception:
-                    # Connection might be dead
-                    pass
+                except Exception as e:
+                    import logging
+                    logger = logging.getLogger("chat_api")
+                    logger.warning(f"Failed to send to websocket for user {user_id}: {e}. Disconnecting.")
+                    self.disconnect(user_id, connection)
 
 # Global instance for the server
 manager = ConnectionManager()
