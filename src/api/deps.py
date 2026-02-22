@@ -1,5 +1,5 @@
 from typing import Annotated, Generator
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, status, Query, WebSocketException
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 from src.database.session import get_db
@@ -52,5 +52,22 @@ async def get_current_user(
         raise HTTPException(status_code=400, detail="Inactive user")
     return user
 
+async def get_current_user_ws(
+    token: str = Query(...),
+    auth_provider: AuthProvider = Depends(get_auth_provider)
+) -> User:
+    """
+    Dependency for WebSocket authentication via query parameter.
+    """
+    try:
+        user = await auth_provider.get_current_user(token)
+    except Exception:
+        raise WebSocketException(code=status.WS_1008_POLICY_VIOLATION)
+        
+    if not user or not user.is_active:
+        raise WebSocketException(code=status.WS_1008_POLICY_VIOLATION)
+    return user
+
 CurrentUser = Annotated[User, Depends(get_current_user)]
 DB = Annotated[AsyncSession, Depends(get_db)]
+

@@ -15,11 +15,14 @@ async def lifespan(app: FastAPI):
     Lifespan events: Startup and Shutdown logic.
     Use this for connecting to DBs, Redis, etc.
     """
+    from src.core.pubsub import pubsub_manager
     logger.info("Application starting up...")
+    await pubsub_manager.connect()
     
     yield
     
     logger.info("Application shutting down...")
+    await pubsub_manager.disconnect()
 
 def create_app() -> FastAPI:
     """
@@ -48,6 +51,13 @@ def create_app() -> FastAPI:
     
     from src.modules.conversations.router import router as conversations_router
     app.include_router(conversations_router, prefix=f"{settings.API_V1_STR}/conversations", tags=["Conversations"])
+    
+    from src.modules.messages.router import router as messages_router
+    # mount this at /conversations because the paths in messages_router start with /{conversation_id}/messages
+    app.include_router(messages_router, prefix=f"{settings.API_V1_STR}/conversations", tags=["Messages"])
+    
+    from src.modules.realtime.router import router as realtime_router
+    app.include_router(realtime_router, tags=["Realtime"])
     
     return app
 
