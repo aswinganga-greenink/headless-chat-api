@@ -1,7 +1,7 @@
 from typing import List
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, text
+from sqlalchemy import select, text, desc
 from sqlalchemy.orm import selectinload
 
 from src.api import deps
@@ -81,9 +81,13 @@ async def list_conversations(
     # Join ConversationParticipant to filter by user_id
     stmt = (
         select(Conversation)
-        .join(ConversationParticipant, Conversation.id == ConversationParticipant.conversation_id)
-        .where(ConversationParticipant.user_id == current_user.id)
-        .order_by(Conversation.updated_at.desc())
+        .join(ConversationParticipant)
+        .options(selectinload(Conversation.participants))
+        .where(
+            ConversationParticipant.user_id == current_user.id,
+            ConversationParticipant.is_active == True
+        )
+        .order_by(desc(Conversation.updated_at))
         .offset(skip)
         .limit(limit)
     )
@@ -95,40 +99,47 @@ async def list_conversations(
     from src.models.all_models import Message
     from sqlalchemy import func
     
+    # Bulk fetch the created_at timestamps for all last_seen_message_ids
+    last_seen_ids = []
     for conv in conversations:
-        # 1. Get user's participant record for last_seen_id
-        p_stmt = select(ConversationParticipant).where(
-            ConversationParticipant.conversation_id == conv.id,
-            ConversationParticipant.user_id == current_user.id
-        )
-        p_res = await db.execute(p_stmt)
-        part = p_res.scalars().first()
+        part = next((p for p in conv.participants if p.user_id == current_user.id), None)
+        if part and part.last_seen_message_id:
+            last_seen_ids.append(part.last_seen_message_id)
+            
+    last_seen_timestamps = {}
+    if last_seen_ids:
+        # Group chunks if too large, but usually a single IN clause is fine
+        ts_stmt = select(Message.id, Message.created_at).where(Message.id.in_(last_seen_ids))
+        ts_res = await db.execute(ts_stmt)
+        for msg_id, created_at in ts_res.all():
+            last_seen_timestamps[msg_id] = created_at
+            
+    for conv in conversations:
+        # We already have participants loaded via selectinload
+        part = next((p for p in conv.participants if p.user_id == current_user.id), None)
         
         unread_count = 0
         if part:
-            if part.last_seen_message_id:
-                # Find the timestamp of the last seen message
-                m_stmt = select(Message.created_at).where(Message.id == part.last_seen_message_id)
-                m_res = await db.execute(m_stmt)
-                last_time = m_res.scalar()
-                
-                if last_time:
-                    c_stmt = select(func.count(Message.id)).where(
-                        Message.conversation_id == conv.id,
-                        Message.created_at > last_time
-                    )
-                    c_res = await db.execute(c_stmt)
-                    unread_count = c_res.scalar() or 0
+            if part.last_seen_message_id and part.last_seen_message_id in last_seen_timestamps:
+                last_time = last_seen_timestamps[part.last_seen_message_id]
+                c_stmt = select(func.count(Message.id)).where(
+                    Message.conversation_id == conv.id,
+                    Message.created_at > last_time,
+                    Message.is_deleted == False
+                )
+                c_res = await db.execute(c_stmt)
+                unread_count = c_res.scalar() or 0
             else:
-                # Never seen any message, count all
-                c_stmt = select(func.count(Message.id)).where(Message.conversation_id == conv.id)
+                # Never seen any message, count all non-deleted
+                c_stmt = select(func.count(Message.id)).where(
+                    Message.conversation_id == conv.id,
+                    Message.is_deleted == False
+                )
                 c_res = await db.execute(c_stmt)
                 unread_count = c_res.scalar() or 0
                 
         # Build the response model
         conv_resp = ConversationResponse.model_validate(conv)
-        # Note: model_validate creates a new immutable-by-default pydantic model in v2, 
-        # so we either use a dict or copy/update. 
         conv_dict = conv_resp.model_dump()
         conv_dict["unread_count"] = unread_count
         response_list.append(ConversationResponse(**conv_dict))
@@ -149,10 +160,11 @@ async def add_participants(
     """
     # Verify conversation exists and user is a participant (or admin)
     # Ideally only admins/creator should add.
+    import uuid
     stmt = (
         select(Conversation)
         .options(selectinload(Conversation.participants))
-        .where(Conversation.id == conversation_id)
+        .where(Conversation.id == uuid.UUID(conversation_id))
     )
     result = await db.execute(stmt)
     conversation = result.scalars().first()

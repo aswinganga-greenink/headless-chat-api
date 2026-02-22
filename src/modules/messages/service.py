@@ -103,6 +103,46 @@ class MessageService:
         if not participant:
             raise HTTPException(status_code=403, detail="You are not a participant of this conversation")
             
-        participant.last_seen_message_id = last_seen_message_id
+        import uuid
+        participant.last_seen_message_id = uuid.UUID(last_seen_message_id) if last_seen_message_id else None
         await self.db.commit()
         return {"status": "ok"}
+
+    async def soft_delete_message(self, conversation_id: str, sender_id: str, message_id: str):
+        """
+        Soft deletes a message. Only the sender can delete their own message.
+        """
+        # 1. Verify message exists and belongs to conversation
+        message = await self.repo.get_message(message_id)
+        if not message or str(message.conversation_id) != conversation_id:
+            raise HTTPException(status_code=404, detail="Message not found in this conversation")
+            
+        # 2. Verify ownership
+        if str(message.sender_id) != sender_id:
+            raise HTTPException(status_code=403, detail="You can only delete your own messages")
+            
+        # 3. Verify it's not already deleted
+        if message.is_deleted:
+            raise HTTPException(status_code=400, detail="Message is already deleted")
+            
+        # Create payload before commit to avoid expired object access
+        event_payload = {
+            "event_type": "message_deleted",
+            "message_id": str(message.id),
+            "conversation_id": conversation_id
+        }
+
+        # 4. Perform soft delete
+        message.is_deleted = True
+        await self.db.commit()
+        
+        # We might want to broadcast a 'message_deleted' event to participants
+        # so clients can remove it from their UI in real-time.
+        # This is strictly optional for MVP but good for V2 completeness.
+        participant_ids = await self.repo.get_all_participant_ids(conversation_id)
+        try:
+            await pubsub_manager.publish_message(event_payload, participant_ids)
+        except Exception as e:
+            logger.error(f"Failed to publish delete event: {e}")
+            
+        return {"status": "deleted"}

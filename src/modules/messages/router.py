@@ -53,3 +53,16 @@ async def mark_read(
     """
     service = MessageService(db)
     return await service.read_message(conversation_id, str(current_user.id), str(payload.last_seen_message_id))
+
+@router.delete("/{conversation_id}/messages/{message_id}", status_code=status.HTTP_200_OK)
+async def delete_message(
+    conversation_id: str,
+    message_id: str,
+    current_user: User = Depends(deps.get_current_user),
+    db: AsyncSession = Depends(deps.get_db)
+):
+    """
+    Soft delete a message.
+    """
+    service = MessageService(db)
+    return await service.soft_delete_message(conversation_id, str(current_user.id), message_id)

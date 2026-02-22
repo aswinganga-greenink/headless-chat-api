@@ -10,24 +10,33 @@ class MessageRepository:
         self.db = db
 
     async def get_conversation(self, conversation_id: str) -> Optional[Conversation]:
-        stmt = select(Conversation).where(Conversation.id == conversation_id)
+        import uuid
+        stmt = select(Conversation).where(Conversation.id == uuid.UUID(conversation_id))
         result = await self.db.execute(stmt)
         return result.scalars().first()
 
     async def get_participant(self, conversation_id: str, user_id: str) -> Optional[ConversationParticipant]:
+        import uuid
         stmt = select(ConversationParticipant).where(
-            ConversationParticipant.conversation_id == conversation_id,
-            ConversationParticipant.user_id == user_id
+            ConversationParticipant.conversation_id == uuid.UUID(conversation_id),
+            ConversationParticipant.user_id == uuid.UUID(user_id)
         )
         result = await self.db.execute(stmt)
         return result.scalars().first()
 
     async def get_all_participant_ids(self, conversation_id: str) -> List[str]:
+        import uuid
         stmt = select(ConversationParticipant.user_id).where(
-            ConversationParticipant.conversation_id == conversation_id
+            ConversationParticipant.conversation_id == uuid.UUID(conversation_id)
         )
         result = await self.db.execute(stmt)
         return [str(pid) for pid in result.scalars().all()]
+
+    async def get_message(self, message_id: str) -> Optional[Message]:
+        import uuid
+        stmt = select(Message).where(Message.id == uuid.UUID(message_id))
+        result = await self.db.execute(stmt)
+        return result.scalars().first()
 
     def create_message(
         self, 
@@ -37,9 +46,10 @@ class MessageRepository:
         message_type: str, 
         media_url: Optional[str]
     ) -> Message:
+        import uuid
         message = Message(
-            conversation_id=conversation_id,
-            sender_id=sender_id,
+            conversation_id=uuid.UUID(conversation_id),
+            sender_id=uuid.UUID(sender_id),
             content=content,
             message_type=message_type,
             media_url=media_url
@@ -56,10 +66,11 @@ class MessageRepository:
         limit: int, 
         cursor_dt: Optional[datetime] = None
     ) -> List[Message]:
+        import uuid
         query = (
             select(Message)
             .where(
-                Message.conversation_id == conversation_id,
+                Message.conversation_id == uuid.UUID(conversation_id),
                 Message.is_deleted == False
             )
             .order_by(desc(Message.created_at))
