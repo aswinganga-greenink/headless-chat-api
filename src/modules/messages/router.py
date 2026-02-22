@@ -20,23 +20,36 @@ async def send_message(
     """
     Send a message to a conversation.
     """
-    # Verify user is a participant
-    # We can do a quick check via ConversationParticipant
-    stmt = select(ConversationParticipant).where(
+    # 1. Validate conversation exists
+    # 2. Validate sender is participant
+    # 3. Fetch all participant IDs early
+    # We can do this in a single query or two queries.
+    stmt = select(Conversation).where(Conversation.id == conversation_id)
+    result = await db.execute(stmt)
+    conversation = result.scalars().first()
+    
+    if not conversation:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+        
+    stmt_part = select(ConversationParticipant).where(
         ConversationParticipant.conversation_id == conversation_id,
         ConversationParticipant.user_id == current_user.id
     )
-    result = await db.execute(stmt)
-    participant_record = result.scalars().first()
+    result_part = await db.execute(stmt_part)
+    participant_record = result_part.scalars().first()
     
     if not participant_record:
-        # Check if conversation exists at all to give better error?
-        # For security, 403 or 404 is fine. 403 implies "you can see it exists but can't post", 
-        # 404 implies "it doesn't exist or you don't have access".
-        # Let's check existence first for clarity if debugging, but 403 is safer.
-        # Let's return 403 if user is not part of it.
         raise HTTPException(status_code=403, detail="You are not a participant of this conversation")
 
+    # Fetch all participants of the conversation to broadcast 
+    # (doing this before commit reduces post-commit DB reads)
+    stmt_all_parts = select(ConversationParticipant.user_id).where(
+        ConversationParticipant.conversation_id == conversation_id
+    )
+    parts_result = await db.execute(stmt_all_parts)
+    participant_ids = [str(pid) for pid in parts_result.scalars().all()]
+
+    # 4. Insert message
     message = Message(
         conversation_id=conversation_id,
         sender_id=current_user.id,
@@ -45,20 +58,25 @@ async def send_message(
         media_url=message_in.media_url
     )
     db.add(message)
+    
+    # 5. Update conversation.updated_at
+    from sqlalchemy.sql import func
+    conversation.updated_at = func.now()
+    
+    # 6. Commit transaction
     await db.commit()
     await db.refresh(message)
     
-    # Fetch all participants of the conversation to broadcast
-    stmt_participants = select(ConversationParticipant.user_id).where(
-        ConversationParticipant.conversation_id == conversation_id
-    )
-    parts_result = await db.execute(stmt_participants)
-    participant_ids = [str(pid) for pid in parts_result.scalars().all()]
-    
-    # Publish via Redis
+    # 7. Publish event to PubSub (After successful commit)
     from src.core.pubsub import pubsub_manager
     msg_dict = MessageResponse.model_validate(message).model_dump(mode='json')
-    await pubsub_manager.publish_message(msg_dict, participant_ids)
+    try:
+        await pubsub_manager.publish_message(msg_dict, participant_ids)
+    except Exception as e:
+        import logging
+        logger = logging.getLogger("chat_api")
+        logger.error(f"Failed to publish message event: {e}")
+        # We don't fail the HTTP response if event publish fails, DB state is intact.
     
     return message
 
